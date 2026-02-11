@@ -1,0 +1,723 @@
+<!-- 
+============================================================================
+ШАБЛОН СПИСКА ИЗОБРАЖЕНИЙ ПОЛЬЗОВАТЕЛЯ - ПЕРСОНАЛЬНАЯ ГАЛЕРЕЯ
+============================================================================
+
+Этот шаблон отображает персональную галерею изображений пользователя
+в табличном формате с возможностями управления файлами. Предоставляет
+полный контроль над загруженными изображениями и их метаданными.
+
+Основные функции:
+- Табличное отображение всех изображений пользователя
+- Миниатюры изображений для быстрого визуального поиска
+- Метаданные файлов (имя, дата загрузки, срок хранения)
+- Действия с изображениями (просмотр, копирование ссылки, удаление)
+- Система пагинации для больших коллекций
+- JavaScript функциональность копирования ссылок
+- Состояние "пустой галереи" с призывом к действию
+
+Технические особенности:
+- Наследует базовый шаблон для консистентности
+- Использует Bootstrap Table для структурированного отображения
+- Jinja2 циклы для динамического контента
+- Responsive дизайн для мобильных устройств
+- Clipboard API для копирования ссылок
+- Подтверждение удаления через JavaScript confirm
+
+Пользовательский опыт:
+- Интуитивная навигация по коллекции
+- Быстрый доступ к основным действиям
+- Визуальные превью для идентификации изображений
+- Четкая информация о сроках хранения
+- Безопасное удаление с подтверждением
+
+Интеграция с системой:
+- Получает данные из таблицы images для текущего пользователя
+- Использует Flask pagination для больших наборов данных
+- Интегрируется с системой управления файлами
+- Поддерживает сессии пользователей
+- Генерирует безопасные URL для изображений
+
+Безопасность:
+- Отображает только изображения текущего пользователя
+- Проверка прав доступа к файлам
+- Безопасное формирование URL
+- Защита от несанкционированного доступа
+
+Управление файлами:
+- Просмотр изображений в полном размере
+- Копирование прямых ссылок для внешнего использования
+- Удаление ненужных изображений
+- Мониторинг сроков хранения файлов
+
+============================================================================
+-->
+
+<!-- Наследуем базовый шаблон с общей структурой -->
+{% extends 'base.html' %}
+
+<!-- Устанавливаем заголовок страницы списка изображений -->
+{% block title %}Список изображений - Фото Хостинг{% endblock %}
+
+<!-- Основной контент страницы списка изображений -->
+{% block content %}
+<!-- ========================================================================
+     ОСНОВНОЙ КОНТЕЙНЕР СПИСКА ИЗОБРАЖЕНИЙ
+     ======================================================================== -->
+<div class="container mt-4">
+    <!-- Заголовок страницы персональной галереи -->
+    <h2 class="mb-4">Ваши изображения</h2>
+    
+    <!-- ====================================================================
+         FLASH-СООБЩЕНИЯ ДЛЯ СТРАНИЦЫ СПИСКА ИЗОБРАЖЕНИЙ
+         ==================================================================== -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ 'danger' if category == 'error' else ('warning' if category == 'warning' else ('info' if category == 'info' else 'success')) }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    
+    <!-- ====================================================================
+         УСЛОВНОЕ ОТОБРАЖЕНИЕ: ТАБЛИЦА ИЗОБРАЖЕНИЙ ИЛИ ПУСТОЕ СОСТОЯНИЕ
+         ==================================================================== -->
+    {% if images %}
+    <!-- ================================================================
+         ПАНЕЛЬ ГРУППОВОГО УПРАВЛЕНИЯ ИЗОБРАЖЕНИЯМИ
+         Кнопки для операций с выбранными изображениями
+         ================================================================ -->
+    <div class="mb-3" id="bulkActions" style="display: none;">
+        <div class="alert alert-info d-flex justify-content-between align-items-center">
+            <span id="selectedCount">Выбрано изображений: 0</span>
+            <div>
+                <button type="button" class="btn btn-sm btn-outline-success me-2" 
+                        id="downloadSelected" disabled>
+                    📥 Скачать выбранные
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-info me-2" 
+                        id="shareSelected" disabled>
+                    🔗 Поделиться ссылкой
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-danger me-2" 
+                        id="deleteSelected" disabled>
+                    🗑️ Удалить выбранные
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" 
+                        id="clearSelection">
+                    Отменить выбор
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ================================================================
+         RESPONSIVE ТАБЛИЦА ИЗОБРАЖЕНИЙ
+         Основной интерфейс управления коллекцией пользователя
+         ================================================================ -->
+    <div class="table-responsive">
+        <table class="table table-hover">
+            <!-- ========================================================
+                 ЗАГОЛОВОК ТАБЛИЦЫ
+                 Определяет структуру данных для каждого изображения
+                 ======================================================== -->
+            <thead class="table-light">
+                <tr>
+                    <th>
+                        <input type="checkbox" id="selectAll" class="form-check-input">
+                        <label for="selectAll" class="form-check-label ms-1">Выбрать все</label>
+                    </th>
+                    <th>Изображение</th>      <!-- Миниатюра для визуальной идентификации -->
+                    <th>Имя файла</th>        <!-- Системное имя файла -->
+                    <th>Размер</th>           <!-- Размер файла в KB -->
+                    <th>Тип</th>              <!-- MIME-тип файла -->
+                    <th>Дата загрузки</th>    <!-- Временная метка создания -->
+                    <th>Срок хранения</th>    <!-- Дата автоматического удаления -->
+                    <th>Действия</th>         <!-- Кнопки управления файлом -->
+                </tr>
+            </thead>
+            
+            <!-- ========================================================
+                 ТЕЛО ТАБЛИЦЫ: СПИСОК ИЗОБРАЖЕНИЙ ПОЛЬЗОВАТЕЛЯ
+                 Динамическое отображение через Jinja2 цикл
+                 ======================================================== -->
+            <tbody>
+                {% for image in images %}
+                <tr>
+                    <!-- ============================================
+                         КОЛОНКА: ЧЕКБОКС ДЛЯ ВЫБОРА ИЗОБРАЖЕНИЯ
+                         Позволяет выбрать изображение для группового удаления
+                         ============================================ -->
+                    <td>
+                        <input type="checkbox" class="form-check-input image-checkbox" 
+                               value="{{ image[0] }}" 
+                               data-filename="{{ image[1] }}">
+                    </td>
+                    
+                    <!-- ============================================
+                         КОЛОНКА: МИНИАТЮРА ИЗОБРАЖЕНИЯ
+                         Кликабельный превью для модального просмотра
+                         ============================================ -->
+                    <td>
+                        <!-- Миниатюра с модальным окном -->
+                        <img src="{{ url_for('get_image', user_email=session.user_email, filename=image[1]) }}" 
+                             alt="{{ image[1] }}" 
+                             style="max-height: 50px; max-width: 100px; cursor: pointer;" 
+                             class="image-thumbnail" 
+                             data-bs-toggle="modal" 
+                             data-bs-target="#imageModal" 
+                             data-image-url="{{ url_for('get_image', user_email=session.user_email, filename=image[1]) }}" 
+                             data-image-name="{{ image[1] }}" 
+                             data-image-size="{{ (image[3] / 1024) | round(2) }} KB" 
+                             data-image-type="{{ image[5] }}">
+                    </td>
+                    
+                    <!-- ============================================
+                         КОЛОНКА: ИМЯ ФАЙЛА
+                         Системное имя файла (обычно UUID-based)
+                         ============================================ -->
+                    <td>{{ image[1] }}</td>
+                    
+                    <!-- ============================================
+                         КОЛОНКА: РАЗМЕР ФАЙЛА
+                         Размер файла в килобайтах с округлением
+                         ============================================ -->
+                    <td>{{ (image[3] / 1024) | round(2) }} KB</td>
+                    
+                    <!-- ============================================
+                         КОЛОНКА: ТИП ФАЙЛА
+                         MIME-тип изображения
+                         ============================================ -->
+                    <td>{{ image[5] }}</td>
+                    
+                    <!-- ============================================
+                         КОЛОНКА: ДАТА ЗАГРУЗКИ
+                         Временная метка создания записи
+                         ============================================ -->
+                    <td>{{ image[4] }}</td>
+                    
+                    <!-- ============================================
+                         КОЛОНКА: СРОК ХРАНЕНИЯ
+                         Дата автоматического удаления файла
+                         ============================================ -->
+                    <td>{{ image[7] }}</td>
+                    
+                    <!-- ============================================
+                         КОЛОНКА: ДЕЙСТВИЯ С ИЗОБРАЖЕНИЕМ
+                         Группа кнопок для управления файлом
+                         ============================================ -->
+                    <td>
+                        <div class="btn-group" role="group">
+                            <!-- Кнопка просмотра в полном размере -->
+                            <a href="{{ url_for('view_image', user_email=session.user_email, filename=image[1]) }}" 
+                               class="btn btn-sm btn-primary" 
+                               target="_blank">Просмотр</a>
+                            
+                            <!-- Кнопка скачивания файла -->
+                            <a href="{{ url_for('download_image', user_email=session.user_email, filename=image[1]) }}" 
+                               class="btn btn-sm btn-success" 
+                               download>Скачать</a>
+                            
+                            <!-- Кнопка копирования прямой ссылки -->
+                            <button class="btn btn-sm btn-outline-primary copy-btn" 
+                                    data-url="{{ url_for('get_image', user_email=session.user_email, filename=image[1], _external=True) }}">
+                                Копировать ссылку
+                            </button>
+                            
+                            <!-- Кнопка удаления с подтверждением -->
+                            <a href="{{ url_for('delete_image_route', id=image[0]) }}" 
+                               class="btn btn-sm btn-danger" 
+                               onclick="return confirm('Вы уверены, что хотите удалить это изображение?')">
+                                Удалить
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- ================================================================
+         СИСТЕМА ПАГИНАЦИИ ДЛЯ БОЛЬШИХ КОЛЛЕКЦИЙ
+         Навигация по страницам при большом количестве изображений
+         ================================================================ -->
+    {% if total_pages > 1 %}
+    <nav aria-label="Page navigation">
+        <ul class="pagination justify-content-center">
+            <!-- ================================================
+                 КНОПКА "ПРЕДЫДУЩАЯ СТРАНИЦА"
+                 Активна только если не на первой странице
+                 ================================================ -->
+            {% if page > 1 %}
+            <li class="page-item">
+                <a class="page-link" href="{{ url_for('images_list', page=page-1) }}">
+                    &laquo; Предыдущая
+                </a>
+            </li>
+            {% else %}
+            <li class="page-item disabled">
+                <span class="page-link">&laquo; Предыдущая</span>
+            </li>
+            {% endif %}
+            
+            <!-- ================================================
+                 НОМЕРА СТРАНИЦ
+                 Генерируются динамически на основе total_pages
+                 ================================================ -->
+            {% for i in range(1, total_pages + 1) %}
+            <li class="page-item {% if i == page %}active{% endif %}">
+                <a class="page-link" href="{{ url_for('images_list', page=i) }}">{{ i }}</a>
+            </li>
+            {% endfor %}
+            
+            <!-- ================================================
+                 КНОПКА "СЛЕДУЮЩАЯ СТРАНИЦА"
+                 Активна только если не на последней странице
+                 ================================================ -->
+            {% if page < total_pages %}
+            <li class="page-item">
+                <a class="page-link" href="{{ url_for('images_list', page=page+1) }}">
+                    Следующая &raquo;
+                </a>
+            </li>
+            {% else %}
+            <li class="page-item disabled">
+                <span class="page-link">Следующая &raquo;</span>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+    
+    {% else %}
+    <!-- ================================================================
+         СОСТОЯНИЕ "ПУСТАЯ ГАЛЕРЕЯ"
+         Отображается когда у пользователя нет загруженных изображений
+         ================================================================ -->
+    <div class="alert alert-info">
+        <!-- Информационное сообщение -->
+        <p>У вас пока нет загруженных изображений.</p>
+        <!-- Призыв к действию: загрузить первое изображение -->
+        <a href="{{ url_for('upload_file') }}" class="btn btn-primary">
+            Загрузить изображение
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ========================================================================
+     МОДАЛЬНОЕ ОКНО ДЛЯ ПРОСМОТРА ИЗОБРАЖЕНИЙ
+     Всплывающее окно для предварительного просмотра изображений
+     ======================================================================== -->
+<div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="imageModalLabel">Просмотр изображения</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body text-center">
+                <!-- Изображение в полном размере -->
+                <img id="modalImage" src="" alt="" class="img-fluid mb-3" style="max-height: 70vh;">
+                
+                <!-- Метаданные изображения -->
+                <div class="row">
+                    <div class="col-md-3">
+                        <strong>Имя файла:</strong><br>
+                        <span id="modalImageName"></span>
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Размер:</strong><br>
+                        <span id="modalImageSize"></span>
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Тип:</strong><br>
+                        <span id="modalImageType"></span>
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Действия:</strong><br>
+                        <a id="modalDownloadBtn" href="" class="btn btn-sm btn-success" download>
+                            📥 Скачать
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                <a id="modalViewBtn" href="" class="btn btn-primary" target="_blank">Открыть в новой вкладке</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================
+     JAVASCRIPT ДЛЯ УПРАВЛЕНИЯ ИЗОБРАЖЕНИЯМИ
+     Функциональность копирования, группового выбора и модальных окон
+     ======================================================================== -->
+<script>
+/**
+ * Инициализация функциональности управления изображениями
+ * 
+ * Обеспечивает:
+ * - Копирование ссылок на изображения в буфер обмена
+ * - Групповой выбор изображений через чекбоксы
+ * - Групповое удаление выбранных изображений
+ * - Визуальную обратную связь для всех операций
+ */
+document.addEventListener('DOMContentLoaded', function() {
+    // ========================================================
+    // ФУНКЦИОНАЛЬНОСТЬ КОПИРОВАНИЯ ССЫЛОК
+    // ========================================================
+    const copyButtons = document.querySelectorAll('.copy-btn');
+    
+    copyButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const url = this.getAttribute('data-url');
+            
+            navigator.clipboard.writeText(url).then(() => {
+                // Показываем временное уведомление о копировании
+                showTemporaryAlert('Ссылка скопирована в буфер обмена', 'info', 3000);
+                
+                const originalText = this.textContent;
+                this.textContent = 'Скопировано!';
+                this.classList.remove('btn-outline-primary');
+                this.classList.add('btn-success');
+                
+                setTimeout(() => {
+                    this.textContent = originalText;
+                    this.classList.remove('btn-success');
+                    this.classList.add('btn-outline-primary');
+                }, 2000);
+            });
+        });
+    });
+    
+    // ========================================================
+    // ФУНКЦИОНАЛЬНОСТЬ ГРУППОВОГО ВЫБОРА ИЗОБРАЖЕНИЙ
+    // ========================================================
+    const selectAllCheckbox = document.getElementById('selectAll');
+    const imageCheckboxes = document.querySelectorAll('.image-checkbox');
+    const bulkActions = document.getElementById('bulkActions');
+    const selectedCount = document.getElementById('selectedCount');
+    const deleteSelectedBtn = document.getElementById('deleteSelected');
+    const downloadSelectedBtn = document.getElementById('downloadSelected');
+    const shareSelectedBtn = document.getElementById('shareSelected');
+    const clearSelectionBtn = document.getElementById('clearSelection');
+    
+    // Функция обновления состояния интерфейса
+    function updateSelectionState() {
+        const checkedBoxes = document.querySelectorAll('.image-checkbox:checked');
+        const count = checkedBoxes.length;
+        
+        // Обновляем счетчик выбранных изображений
+        selectedCount.textContent = `Выбрано изображений: ${count}`;
+        
+        // Показываем/скрываем панель группового управления
+        if (count > 0) {
+            bulkActions.style.display = 'block';
+            deleteSelectedBtn.disabled = false;
+            deleteSelectedBtn.classList.remove('btn-outline-danger');
+            deleteSelectedBtn.classList.add('btn-danger');
+            downloadSelectedBtn.disabled = false;
+            downloadSelectedBtn.classList.remove('btn-outline-success');
+            downloadSelectedBtn.classList.add('btn-success');
+            shareSelectedBtn.disabled = false;
+            shareSelectedBtn.classList.remove('btn-outline-info');
+            shareSelectedBtn.classList.add('btn-info');
+        } else {
+            bulkActions.style.display = 'none';
+            deleteSelectedBtn.disabled = true;
+            deleteSelectedBtn.classList.remove('btn-danger');
+            deleteSelectedBtn.classList.add('btn-outline-danger');
+            downloadSelectedBtn.disabled = true;
+            downloadSelectedBtn.classList.remove('btn-success');
+            downloadSelectedBtn.classList.add('btn-outline-success');
+            shareSelectedBtn.disabled = true;
+            shareSelectedBtn.classList.remove('btn-info');
+            shareSelectedBtn.classList.add('btn-outline-info');
+        }
+        
+        // Обновляем состояние чекбокса "Выбрать все"
+        if (count === 0) {
+            selectAllCheckbox.indeterminate = false;
+            selectAllCheckbox.checked = false;
+        } else if (count === imageCheckboxes.length) {
+            selectAllCheckbox.indeterminate = false;
+            selectAllCheckbox.checked = true;
+        } else {
+            selectAllCheckbox.indeterminate = true;
+        }
+    }
+    
+    // Обработчик чекбокса "Выбрать все"
+    selectAllCheckbox.addEventListener('change', function() {
+        const isChecked = this.checked;
+        imageCheckboxes.forEach(checkbox => {
+            checkbox.checked = isChecked;
+        });
+        updateSelectionState();
+    });
+    
+    // Обработчики индивидуальных чекбоксов
+    imageCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', updateSelectionState);
+    });
+    
+    // Обработчик кнопки "Отменить выбор"
+    clearSelectionBtn.addEventListener('click', function() {
+        imageCheckboxes.forEach(checkbox => {
+            checkbox.checked = false;
+        });
+        selectAllCheckbox.checked = false;
+        updateSelectionState();
+    });
+    
+    // Обработчик кнопки "Удалить выбранные"
+    deleteSelectedBtn.addEventListener('click', function() {
+        const checkedBoxes = document.querySelectorAll('.image-checkbox:checked');
+        const imageIds = Array.from(checkedBoxes).map(cb => cb.value);
+        const filenames = Array.from(checkedBoxes).map(cb => cb.getAttribute('data-filename'));
+        
+        if (imageIds.length === 0) return;
+        
+        const confirmMessage = `Вы уверены, что хотите удалить ${imageIds.length} изображений?\n\nФайлы:\n${filenames.join('\n')}`;
+        
+        if (confirm(confirmMessage)) {
+            // Создаем форму для отправки запроса на удаление
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '{{ url_for("delete_multiple_images") }}';
+            
+            // Добавляем CSRF токен если используется
+            {% if csrf_token %}
+            const csrfInput = document.createElement('input');
+            csrfInput.type = 'hidden';
+            csrfInput.name = 'csrf_token';
+            csrfInput.value = '{{ csrf_token() }}';
+            form.appendChild(csrfInput);
+            {% endif %}
+            
+            // Добавляем ID изображений для удаления
+            imageIds.forEach(id => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'image_ids';
+                input.value = id;
+                form.appendChild(input);
+            });
+            
+            // Отправляем форму
+            document.body.appendChild(form);
+            form.submit();
+        }
+    });
+    
+    // ========================================================
+    // ФУНКЦИОНАЛЬНОСТЬ МОДАЛЬНОГО ОКНА
+    // ========================================================
+    const imageModal = document.getElementById('imageModal');
+    const modalImage = document.getElementById('modalImage');
+    const modalImageName = document.getElementById('modalImageName');
+    const modalImageSize = document.getElementById('modalImageSize');
+    const modalImageType = document.getElementById('modalImageType');
+    const modalDownloadBtn = document.getElementById('modalDownloadBtn');
+    const modalViewBtn = document.getElementById('modalViewBtn');
+    
+    // Обработчик клика по миниатюрам
+    document.querySelectorAll('.image-thumbnail').forEach(thumbnail => {
+        thumbnail.addEventListener('click', function() {
+            const imageUrl = this.getAttribute('data-image-url');
+            const imageName = this.getAttribute('data-image-name');
+            const imageSize = this.getAttribute('data-image-size');
+            const imageType = this.getAttribute('data-image-type');
+            
+            // Заполняем модальное окно данными
+            modalImage.src = imageUrl;
+            modalImage.alt = imageName;
+            modalImageName.textContent = imageName;
+            modalImageSize.textContent = imageSize;
+            modalImageType.textContent = imageType;
+            modalDownloadBtn.href = imageUrl.replace('/get_image/', '/download_image/');
+            modalViewBtn.href = imageUrl;
+        });
+    });
+    
+    // ========================================================
+    // ФУНКЦИОНАЛЬНОСТЬ ГРУППОВОГО СКАЧИВАНИЯ
+    // ========================================================
+    downloadSelectedBtn.addEventListener('click', function() {
+        const checkedBoxes = document.querySelectorAll('.image-checkbox:checked');
+        const imageIds = Array.from(checkedBoxes).map(cb => cb.value);
+        const filenames = Array.from(checkedBoxes).map(cb => cb.getAttribute('data-filename'));
+        
+        if (imageIds.length === 0) return;
+        
+        // Создаем форму для отправки запроса на скачивание
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '{{ url_for("download_multiple_images") }}';
+        
+        // Добавляем CSRF токен если используется
+        {% if csrf_token %}
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrf_token';
+        csrfInput.value = '{{ csrf_token() }}';
+        form.appendChild(csrfInput);
+        {% endif %}
+        
+        // Добавляем ID изображений для скачивания
+        imageIds.forEach(id => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'image_ids';
+            input.value = id;
+            form.appendChild(input);
+        });
+        
+        // Отправляем форму
+         document.body.appendChild(form);
+         form.submit();
+     });
+     
+     // ========================================================
+     // ФУНКЦИОНАЛЬНОСТЬ СОЗДАНИЯ ССЫЛКИ ДЛЯ СКАЧИВАНИЯ
+     // ========================================================
+     shareSelectedBtn.addEventListener('click', function() {
+         const checkedBoxes = document.querySelectorAll('.image-checkbox:checked');
+         const imageIds = Array.from(checkedBoxes).map(cb => cb.value);
+         const filenames = Array.from(checkedBoxes).map(cb => cb.getAttribute('data-filename'));
+         
+         if (imageIds.length === 0) return;
+         
+         // Показываем индикатор загрузки
+         const originalText = this.textContent;
+         this.textContent = '⏳ Создание ссылки...';
+         this.disabled = true;
+         
+         // Создаем запрос для генерации ссылки
+         fetch('{{ url_for("create_share_link") }}', {
+             method: 'POST',
+             headers: {
+                 'Content-Type': 'application/json',
+                 {% if csrf_token %}
+                 'X-CSRFToken': '{{ csrf_token() }}'
+                 {% endif %}
+             },
+             body: JSON.stringify({
+                 image_ids: imageIds
+             })
+         })
+         .then(response => response.json())
+         .then(data => {
+             if (data.success) {
+                 // Показываем модальное окно с ссылкой
+                 showShareLinkModal(data.share_url, data.expires_at, filenames.length);
+             } else {
+                 alert('Ошибка при создании ссылки: ' + (data.error || 'Неизвестная ошибка'));
+             }
+         })
+         .catch(error => {
+             console.error('Error:', error);
+             alert('Ошибка при создании ссылки для скачивания');
+         })
+         .finally(() => {
+             // Восстанавливаем кнопку
+             this.textContent = originalText;
+             this.disabled = false;
+         });
+     });
+     
+     // ========================================================
+     // ФУНКЦИЯ ОТОБРАЖЕНИЯ МОДАЛЬНОГО ОКНА С ССЫЛКОЙ
+     // ========================================================
+     function showShareLinkModal(shareUrl, expiresAt, fileCount) {
+         // Создаем модальное окно динамически
+         const modalHtml = `
+             <div class="modal fade" id="shareLinkModal" tabindex="-1" aria-hidden="true">
+                 <div class="modal-dialog modal-lg">
+                     <div class="modal-content">
+                         <div class="modal-header">
+                             <h5 class="modal-title">🔗 Ссылка для скачивания</h5>
+                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                         </div>
+                         <div class="modal-body">
+                             <div class="alert alert-info">
+                                 <strong>📁 Файлов для скачивания:</strong> ${fileCount}<br>
+                                 <strong>⏰ Ссылка действительна до:</strong> ${new Date(expiresAt).toLocaleString('ru-RU')}
+                             </div>
+                             
+                             <div class="mb-3">
+                                 <label class="form-label"><strong>Ссылка для скачивания:</strong></label>
+                                 <div class="input-group">
+                                     <input type="text" class="form-control" id="shareUrlInput" value="${shareUrl}" readonly>
+                                     <button class="btn btn-outline-primary" type="button" id="copyShareUrl">
+                                         📋 Копировать
+                                     </button>
+                                 </div>
+                             </div>
+                             
+                             <div class="alert alert-warning">
+                                 <strong>⚠️ Важно:</strong>
+                                 <ul class="mb-0">
+                                     <li>Ссылка временная и будет удалена через 24 часа</li>
+                                     <li>Любой, у кого есть эта ссылка, сможет скачать файлы</li>
+                                     <li>Не передавайте ссылку незнакомым людям</li>
+                                 </ul>
+                             </div>
+                         </div>
+                         <div class="modal-footer">
+                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                             <a href="${shareUrl}" class="btn btn-primary" target="_blank">🔗 Открыть ссылку</a>
+                         </div>
+                     </div>
+                 </div>
+             </div>
+         `;
+         
+         // Удаляем предыдущее модальное окно если есть
+         const existingModal = document.getElementById('shareLinkModal');
+         if (existingModal) {
+             existingModal.remove();
+         }
+         
+         // Добавляем новое модальное окно
+         document.body.insertAdjacentHTML('beforeend', modalHtml);
+         
+         // Показываем модальное окно
+         const modal = new bootstrap.Modal(document.getElementById('shareLinkModal'));
+         modal.show();
+         
+         // Добавляем обработчик копирования
+         document.getElementById('copyShareUrl').addEventListener('click', function() {
+             const input = document.getElementById('shareUrlInput');
+             input.select();
+             navigator.clipboard.writeText(input.value).then(() => {
+                 // Показываем временное уведомление о копировании
+                  showTemporaryAlert('Ссылка для общего доступа скопирована в буфер обмена', 'info', 3000);
+                 
+                 const originalText = this.textContent;
+                 this.textContent = '✅ Скопировано!';
+                 this.classList.add('btn-success');
+                 this.classList.remove('btn-outline-primary');
+                 
+                 setTimeout(() => {
+                     this.textContent = originalText;
+                     this.classList.remove('btn-success');
+                     this.classList.add('btn-outline-primary');
+                 }, 2000);
+             });
+         });
+         
+         // Удаляем модальное окно после закрытия
+         document.getElementById('shareLinkModal').addEventListener('hidden.bs.modal', function() {
+             this.remove();
+         });
+     }
+ });
+</script>
+{% endblock %}

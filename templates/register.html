@@ -1,0 +1,284 @@
+<!-- 
+============================================================================
+ШАБЛОН ФОРМЫ РЕГИСТРАЦИИ ПОЛЬЗОВАТЕЛЕЙ - СОЗДАНИЕ НОВЫХ АККАУНТОВ
+============================================================================
+
+Этот шаблон представляет собой форму регистрации новых пользователей
+в приложении Image Hosting. Обеспечивает безопасное создание аккаунтов
+с валидацией данных и подтверждением пароля.
+
+Основные функции:
+- Форма создания нового аккаунта с email и паролем
+- Двойная проверка пароля для предотвращения ошибок
+- Валидация данных на стороне клиента и сервера
+- Проверка уникальности email адреса
+- Безопасное хеширование паролей
+- Интеграция с системой входа
+
+Технические особенности:
+- Bootstrap 5 для консистентного дизайна
+- HTML5 валидация форм с pattern matching
+- Flask-WTF CSRF защита
+- Jinja2 шаблонизация
+- Семантическая разметка для доступности
+- JavaScript валидация совпадения паролей
+
+Безопасность:
+- HTTPS обязателен для передачи паролей
+- CSRF токены для защиты форм
+- Серверная валидация всех полей
+- Хеширование паролей с солью (bcrypt/scrypt)
+- Проверка сложности пароля
+- Защита от автоматической регистрации ботов
+
+Валидация:
+- Email формат и уникальность
+- Минимальная длина пароля
+- Совпадение паролей
+- Проверка на распространенные пароли
+- Требования к сложности пароля
+
+UX/UI особенности:
+- Визуальная обратная связь при валидации
+- Четкие инструкции для пользователей
+- Прогрессивное улучшение с JavaScript
+- Адаптивный дизайн для всех устройств
+- Логическая последовательность полей
+
+Доступность:
+- Правильные label-input связи
+- Описательные placeholder тексты
+- Логическая табуляция
+- Screen reader совместимость
+- Контрастные цвета и читаемые шрифты
+
+============================================================================
+-->
+
+<!-- Наследуем базовый шаблон с общей структурой -->
+{% extends 'base.html' %}
+
+<!-- Устанавливаем заголовок страницы для SEO и навигации -->
+{% block title %}Регистрация - Фото Хостинг{% endblock %}
+
+<!-- Основной контент страницы регистрации -->
+{% block content %}
+<!-- ========================================================================
+     ОСНОВНОЙ КОНТЕЙНЕР ФОРМЫ РЕГИСТРАЦИИ
+     ======================================================================== -->
+<div class="container mt-5">
+    <!-- Центрирование формы с помощью Bootstrap Grid System -->
+    <div class="row justify-content-center">
+        <!-- Адаптивная колонка для оптимального отображения на всех устройствах -->
+        <div class="col-md-6">
+            <!-- ============================================================
+                 КАРТОЧКА ФОРМЫ РЕГИСТРАЦИИ
+                 Визуальное выделение и структурирование контента
+                 ============================================================ -->
+            <div class="card">
+                <!-- ====================================================
+                     ЗАГОЛОВОК КАРТОЧКИ
+                     Идентификация процесса регистрации
+                     ==================================================== -->
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">Регистрация</h4>
+                </div>
+                
+                <!-- ====================================================
+                     ТЕЛО КАРТОЧКИ: ФОРМА СОЗДАНИЯ АККАУНТА
+                     Основная функциональность регистрации
+                     ==================================================== -->
+                <div class="card-body">
+                    <!-- ================================================
+                         ОТОБРАЖЕНИЕ FLASH-СООБЩЕНИЙ
+                         Уведомления об ошибках и успешных операциях
+                         ================================================ -->
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            {% for category, message in messages %}
+                                {% if category == 'error' %}
+                                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                                        <strong>❌ Ошибка:</strong> {{ message }}
+                                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                    </div>
+                                {% elif category == 'success' %}
+                                    <div class="alert alert-success alert-dismissible fade show" role="alert">
+                                        <strong>✅ Успех:</strong> {{ message }}
+                                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                    </div>
+                                {% elif category == 'warning' %}
+                                    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                                        <strong>⚠️ Внимание:</strong> {{ message }}
+                                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                    </div>
+                                {% elif category == 'info' %}
+                                    <div class="alert alert-info alert-dismissible fade show" role="alert">
+                                        <strong>ℹ️ Информация:</strong> {{ message }}
+                                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                    </div>
+                                {% endif %}
+                            {% endfor %}
+                        {% endif %}
+                    {% endwith %}
+                    
+                    <!-- Форма отправляется POST методом для безопасности -->
+                    <form method="post" id="registrationForm">
+                        <!-- ============================================
+                             ПОЛЕ EMAIL АДРЕСА
+                             Уникальный идентификатор пользователя
+                             ============================================ -->
+                        <div class="mb-3">
+                            <!-- Семантическая метка для доступности -->
+                            <label for="email" class="form-label">Email</label>
+                            <!-- HTML5 валидация email с дополнительными атрибутами -->
+                            <input type="email" 
+                                   class="form-control" 
+                                   id="email" 
+                                   name="email" 
+                                   required
+                                   autocomplete="email"
+                                   placeholder="example@domain.com"
+                                   aria-describedby="emailHelp">
+                            <!-- Вспомогательный текст для пользователя -->
+                            <div id="emailHelp" class="form-text">
+                                Мы никогда не передадим ваш email третьим лицам.
+                            </div>
+                        </div>
+                        
+                        <!-- ============================================
+                             ПОЛЕ ПАРОЛЯ
+                             Секретная информация для аутентификации
+                             ============================================ -->
+                        <div class="mb-3">
+                            <!-- Семантическая метка с инструкциями -->
+                            <label for="password" class="form-label">Пароль</label>
+                            <!-- Поле пароля с требованиями безопасности -->
+                            <input type="password" 
+                                   class="form-control" 
+                                   id="password" 
+                                   name="password" 
+                                   required
+                                   minlength="8"
+                                   autocomplete="new-password"
+                                   placeholder="Минимум 8 символов"
+                                   aria-describedby="passwordHelp">
+                            <!-- Требования к паролю для пользователя -->
+                            <div id="passwordHelp" class="form-text">
+                                Пароль должен содержать минимум 8 символов.
+                            </div>
+                        </div>
+                        
+                        <!-- ============================================
+                             ПОЛЕ ПОДТВЕРЖДЕНИЯ ПАРОЛЯ
+                             Предотвращение ошибок ввода пароля
+                             ============================================ -->
+                        <div class="mb-3">
+                            <!-- Метка для подтверждения пароля -->
+                            <label for="confirm_password" class="form-label">Подтвердите пароль</label>
+                            <!-- Поле подтверждения с валидацией совпадения -->
+                            <input type="password" 
+                                   class="form-control" 
+                                   id="confirm_password" 
+                                   name="confirm_password" 
+                                   required
+                                   autocomplete="new-password"
+                                   placeholder="Повторите пароль"
+                                   aria-describedby="confirmPasswordHelp">
+                            <!-- Индикатор совпадения паролей -->
+                            <div id="confirmPasswordHelp" class="form-text">
+                                Пароли должны совпадать.
+                            </div>
+                        </div>
+                        
+                        <!-- ============================================
+                             КНОПКА ОТПРАВКИ ФОРМЫ
+                             Инициирует процесс создания аккаунта
+                             ============================================ -->
+                        <div class="d-grid gap-2">
+                            <!-- Полноширинная кнопка для лучшего UX -->
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                Зарегистрироваться
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                
+                <!-- ====================================================
+                     ПОДВАЛ КАРТОЧКИ: НАВИГАЦИЯ К ВХОДУ
+                     Помощь существующим пользователям
+                     ==================================================== -->
+                <div class="card-footer text-center">
+                    <!-- Ссылка на вход для существующих пользователей -->
+                    <p class="mb-0">
+                        Уже есть аккаунт? 
+                        <a href="{{ url_for('login') }}" class="text-decoration-none">
+                            Войти
+                        </a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================
+     JAVASCRIPT ДЛЯ ВАЛИДАЦИИ ФОРМЫ РЕГИСТРАЦИИ
+     Клиентская валидация для улучшения UX
+     ======================================================================== -->
+<script>
+/**
+ * Валидация формы регистрации на стороне клиента
+ * 
+ * Обеспечивает немедленную обратную связь пользователю
+ * при заполнении формы, особенно для проверки совпадения паролей.
+ */
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('registrationForm');
+    const password = document.getElementById('password');
+    const confirmPassword = document.getElementById('confirm_password');
+    const confirmPasswordHelp = document.getElementById('confirmPasswordHelp');
+    
+    /**
+     * Проверка совпадения паролей в реальном времени
+     */
+    function validatePasswordMatch() {
+        if (confirmPassword.value === '') {
+            // Сброс состояния если поле пустое
+            confirmPassword.classList.remove('is-valid', 'is-invalid');
+            confirmPasswordHelp.textContent = 'Пароли должны совпадать.';
+            confirmPasswordHelp.className = 'form-text';
+            return;
+        }
+        
+        if (password.value === confirmPassword.value) {
+            // Пароли совпадают - показываем успех
+            confirmPassword.classList.remove('is-invalid');
+            confirmPassword.classList.add('is-valid');
+            confirmPasswordHelp.textContent = 'Пароли совпадают!';
+            confirmPasswordHelp.className = 'form-text text-success';
+        } else {
+            // Пароли не совпадают - показываем ошибку
+            confirmPassword.classList.remove('is-valid');
+            confirmPassword.classList.add('is-invalid');
+            confirmPasswordHelp.textContent = 'Пароли не совпадают.';
+            confirmPasswordHelp.className = 'form-text text-danger';
+        }
+    }
+    
+    // Добавляем обработчики событий для валидации
+    confirmPassword.addEventListener('input', validatePasswordMatch);
+    password.addEventListener('input', validatePasswordMatch);
+    
+    /**
+     * Валидация формы перед отправкой
+     */
+    form.addEventListener('submit', function(event) {
+        if (password.value !== confirmPassword.value) {
+            event.preventDefault();
+            alert('Пароли не совпадают. Пожалуйста, проверьте введенные данные.');
+            confirmPassword.focus();
+        }
+    });
+});
+</script>
+{% endblock %}

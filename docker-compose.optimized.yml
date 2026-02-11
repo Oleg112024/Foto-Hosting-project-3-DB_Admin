@@ -1,0 +1,365 @@
+# ============================================================================
+# ОПТИМИЗИРОВАННАЯ DOCKER COMPOSE КОНФИГУРАЦИЯ ДЛЯ ВЫСОКОЙ НАГРУЗКИ
+# ============================================================================
+# 
+# Этот файл определяет оптимизированное многоконтейнерное приложение:
+# - PostgreSQL база данных (db)
+# - Redis для кэширования и сессий (redis)
+# - Множественные экземпляры Flask приложения (web_1, web_2, web_3, web_4)
+# - Nginx обратный прокси с балансировкой нагрузки (nginx)
+# - pgAdmin веб-интерфейс для управления БД (pgadmin)
+#
+# Для запуска: docker-compose -f docker-compose.optimized.yml up -d
+# Для остановки: docker-compose -f docker-compose.optimized.yml down
+# ============================================================================
+
+services:
+  # ==========================================================================
+  # POSTGRESQL DATABASE SERVICE
+  # ==========================================================================
+  db:
+    # Официальный образ PostgreSQL версии 17.5
+    image: postgres:17.5
+    
+    # Имя контейнера для удобства управления
+    container_name: image_hosting_db_optimized
+    
+    # Переменные окружения для настройки PostgreSQL
+    environment:
+      # Основные параметры БД (берутся из .env файла)
+      POSTGRES_USER: ${DB_USER}           # Имя пользователя БД
+      POSTGRES_PASSWORD: ${DB_PASSWORD}   # Пароль пользователя БД
+      POSTGRES_DB: ${DB_NAME}             # Имя создаваемой БД
+      
+      # Параметры инициализации БД с поддержкой UTF-8
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=en_US.UTF-8 --lc-ctype=en_US.UTF-8"
+      
+      # Настройки локализации для корректной работы с русским текстом
+      LC_ALL: en_US.UTF-8
+      LANG: en_US.UTF-8
+      LANGUAGE: en_US.UTF-8
+    
+    # Проброс портов: хост:контейнер
+    ports:
+      - "5432:5432"  # Стандартный порт PostgreSQL
+    
+    # Монтирование томов для постоянного хранения данных
+    volumes:
+      - db_data:/var/lib/postgresql/data  # Данные БД сохраняются между перезапусками
+    
+    # Политика перезапуска: перезапускать всегда, кроме ручной остановки
+    restart: unless-stopped
+    
+    # Health check для мониторинга состояния
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    
+    # Сеть для изоляции сервисов
+    networks:
+      - app-network
+
+  # ==========================================================================
+  # REDIS ДЛЯ КЭШИРОВАНИЯ И СЕССИЙ
+  # ==========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: image_hosting_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: >
+      redis-server 
+      --maxmemory 512mb 
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - app-network
+
+  # ==========================================================================
+  # МНОЖЕСТВЕННЫЕ ЭКЗЕМПЛЯРЫ FLASK ПРИЛОЖЕНИЯ
+  # ==========================================================================
+  web_1:
+    build: .
+    image: foto-hosting:1.2.0-optimized
+    container_name: image_hosting_web_1
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=production
+      - WORKERS=4
+      - THREADS=2
+      # Подключение к Redis
+      - REDIS_URL=redis://redis:6379
+      # Настройки пула соединений БД
+      - DB_POOL_MIN=5
+      - DB_POOL_MAX=20
+      # Остальные переменные из .env
+      - DB_HOST=db
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - SECRET_KEY=${SECRET_KEY}
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - ADMIN_EMAILS=${ADMIN_EMAILS}
+    volumes:
+      - ./images:/app/images
+      - ./logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - app-network
+
+  web_2:
+    build: .
+    image: foto-hosting:1.2.0-optimized
+    container_name: image_hosting_web_2
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=production
+      - WORKERS=4
+      - THREADS=2
+      - REDIS_URL=redis://redis:6379
+      - DB_POOL_MIN=5
+      - DB_POOL_MAX=20
+      - DB_HOST=db
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - SECRET_KEY=${SECRET_KEY}
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - ADMIN_EMAILS=${ADMIN_EMAILS}
+    volumes:
+      - ./images:/app/images
+      - ./logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - app-network
+
+  web_3:
+    build: .
+    image: foto-hosting:1.2.0-optimized
+    container_name: image_hosting_web_3
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=production
+      - WORKERS=4
+      - THREADS=2
+      - REDIS_URL=redis://redis:6379
+      - DB_POOL_MIN=5
+      - DB_POOL_MAX=20
+      - DB_HOST=db
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - SECRET_KEY=${SECRET_KEY}
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - ADMIN_EMAILS=${ADMIN_EMAILS}
+    volumes:
+      - ./images:/app/images
+      - ./logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - app-network
+
+  web_4:
+    build: .
+    image: foto-hosting:1.2.0-optimized
+    container_name: image_hosting_web_4
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=production
+      - WORKERS=4
+      - THREADS=2
+      - REDIS_URL=redis://redis:6379
+      - DB_POOL_MIN=5
+      - DB_POOL_MAX=20
+      - DB_HOST=db
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - SECRET_KEY=${SECRET_KEY}
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - ADMIN_EMAILS=${ADMIN_EMAILS}
+    volumes:
+      - ./images:/app/images
+      - ./logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - app-network
+
+  # ==========================================================================
+  # NGINX LOAD BALANCER
+  # ==========================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: image_hosting_nginx_optimized
+    ports:
+      - "80:80"    # HTTP
+      - "443:443"  # HTTPS (для будущего использования)
+    volumes:
+      - ./nginx.optimized.conf:/etc/nginx/nginx.conf
+      - ./images:/app/images
+      - ./static:/app/static
+    depends_on:
+      - web_1
+      - web_2
+      - web_3
+      - web_4
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - app-network
+
+  # ==========================================================================
+  # PGADMIN WEB INTERFACE
+  # ==========================================================================
+  pgadmin:
+    # Официальный образ pgAdmin 4
+    image: dpage/pgadmin4:9.4
+    
+    # Имя контейнера
+    container_name: image_hosting_pgadmin_optimized
+    
+    # Переменные окружения для pgAdmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${ADMIN_EMAIL}     # Email администратора
+      PGADMIN_DEFAULT_PASSWORD: ${ADMIN_PASSWORD} # Пароль администратора
+      PGADMIN_CONFIG_SERVER_MODE: 'False'      # Режим сервера отключен
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False' # Мастер-пароль не требуется
+    
+    # Проброс портов
+    ports:
+      - "5050:80"  # pgAdmin доступен на http://localhost:5050
+    
+    # Монтирование конфигурационных файлов
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin_servers.json:/pgadmin4/servers.json
+    
+    # Зависимости: pgAdmin запускается после БД
+    depends_on:
+      db:
+        condition: service_healthy
+    
+    # Политика перезапуска
+    restart: unless-stopped
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/misc/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    
+    networks:
+      - app-network
+
+# ============================================================================
+# VOLUMES CONFIGURATION
+# ============================================================================
+volumes:
+  # Том для данных PostgreSQL
+  db_data:
+    driver: local
+  
+  # Том для данных Redis
+  redis_data:
+    driver: local
+  
+  # Том для данных pgAdmin
+  pgadmin_data:
+    driver: local
+
+# ============================================================================
+# NETWORKS CONFIGURATION
+# ============================================================================
+networks:
+  app-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# ============================================================================
+# ДОПОЛНИТЕЛЬНАЯ ИНФОРМАЦИЯ
+# ============================================================================
+# 
+# Использование:
+# 1. Создание .env файла с переменными окружения
+# 2. Запуск: docker-compose -f docker-compose.optimized.yml up -d
+# 3. Проверка: docker-compose -f docker-compose.optimized.yml ps
+# 4. Логи: docker-compose -f docker-compose.optimized.yml logs -f
+# 
+# Доступ к сервисам:
+# - Приложение: http://localhost
+# - pgAdmin: http://localhost:5050
+# - Метрики: http://localhost/metrics
+# - Health check: http://localhost/health
+# - PostgreSQL: localhost:5432
+# - Redis: localhost:6379
+# 
+# Остановка:
+# docker-compose -f docker-compose.optimized.yml down
+# 
+# Полная очистка (включая данные):
+# docker-compose -f docker-compose.optimized.yml down -v
+# 
+# ============================================================================
